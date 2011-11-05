@@ -1,0 +1,3 @@
+[submodule "php-liquid"]
+	path = php-liquid
+	url = https://github.com/harrydeluxe/php-liquid.git

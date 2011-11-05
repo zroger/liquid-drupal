@@ -1,0 +1,134 @@
+<?php
+
+/**
+ * @file
+ * Handles integration of php-liquid with the Drupal theme system.
+ */
+
+define('LIQUID_INCLUDE_SUFFIX', 'liquid');
+define('LIQUID_INCLUDE_PREFIX', '');
+
+require_once(dirname(__FILE__) . '/php-liquid/Liquid.class.php');
+
+/**
+ * Implements ENGINE_init().
+ *
+ * @see _drupal_theme_initialize().
+ */
+function liquid_init($theme) {
+  $file = dirname($theme->filename) . '/template.php';
+  if (file_exists($file)) {
+    include_once DRUPAL_ROOT . '/' . $file;
+  }
+}
+
+/**
+ * Implements hook_theme().
+ */
+function liquid_theme($existing, $type, $theme, $path) {
+  // Theme functions.
+  $templates = drupal_find_theme_functions($existing, array($theme));
+
+  // Theme template files.
+  $templates += drupal_find_theme_templates($existing, liquid_extension(), $path);
+
+  // Fill in the gaps with any templates provided by the theme engine.
+  $templates += drupal_find_theme_templates($existing, liquid_extension(), dirname(__FILE__));
+
+  return $templates;
+}
+
+/**
+ * Implements ENGINE_extension().
+ */
+function liquid_extension() {
+  return '.liquid';
+}
+
+/**
+ * Implements ENGINE_render_template().
+ */
+function liquid_render_template($template_file, $variables) {
+  $template = new LiquidTemplate();
+  $template->registerFilter('DrupalLiquidFilters');
+  $template->parse(file_get_contents($template_file));
+
+  foreach ($variables as $key => $value) {
+    if (is_object($value) && !is_callable(array($value, 'toLiquid'))) {
+      $variables[$key] = new DrupalLiquidDrop($value);
+    }
+  }
+
+  return $template->render($variables);
+}
+
+/**
+ * Some basic filters for using liquid with Drupal.
+ */
+class DrupalLiquidFilters {
+  /**
+   * Example:
+   *   {{ 'Home' | t }}
+   */
+  static public function t($input) {
+    // TODO: figure out how to handle args to t.
+    return t($input);
+  }
+
+  /**
+   * Hide an item in a renderable array. Since filters cannot operate by 
+   * reference, in order to use this filter effectively, chain it together
+   * with a call to the render filter.  Ideally, all calls to hide and render
+   * should be done in a preprocess function.
+   *
+   * Example:
+   *   {{ content | hide: "links" | hide: "comments" | render }}
+   */
+  static public function hide($input, $key) {
+    hide($input[$key]);
+    return $input;
+  }
+
+  /**
+   * Example:
+   *   {{ content | render }}
+   */
+  static public function render($input) {
+    return render($input);
+  }
+}
+
+/**
+ * Simple object decorator, to make stdClass objects usable by liquid.
+ */
+class DrupalLiquidDrop extends LiquidDrop {
+  protected $__original;
+
+  public function __construct($original) {
+    $this->__original = $original;
+  }
+
+  /**
+   * Catch all method that is invoked before a specific method
+   *
+   * @param string $method
+   * @return mixed
+   */
+  protected function _beforeMethod($method) {
+    if (property_exists($this->__original, $method)) {
+      return $this->__original->{$method};
+    }
+  }
+
+  public function hasKey($name) {
+    return property_exists($this->__original, $name);
+  }
+
+  public function __toString() {
+    return $this->__original->__toString();
+  }
+
+  public function to_string() {
+    return $this->__toString();
+  }
+}
